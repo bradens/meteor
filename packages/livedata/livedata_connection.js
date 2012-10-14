@@ -59,7 +59,7 @@ Meteor._LivedataConnection = function (url, restart_on_update) {
   // name -> updates for (yet to be created) collection
   self.queued = {};
   // if we're blocking a migration, the retry func
-  self.retry_migrate = null;
+  self._retryMigrate = null;
 
   // metadata for subscriptions
   self.subs = new LocalCollection;
@@ -70,16 +70,19 @@ Meteor._LivedataConnection = function (url, restart_on_update) {
   // just for testing
   self.quiesce_callbacks = [];
 
-  var reload_key = "Server-" + url;
-  Meteor._reload.on_migrate(reload_key, function (retry) {
+
+  // Setup auto-reload persistence.
+  Meteor._reload.onMigrate(function (retry) {
     if (!self._readyToMigrate()) {
-      if (self.retry_migrate)
+      if (self._retryMigrate)
         throw new Error("Two migrations in progress?");
-      self.retry_migrate = retry;
+      self._retryMigrate = retry;
       return false;
     } else {
       return [true];
     }
+
+    return [true];
   });
 
   // Setup stream (if not overriden above)
@@ -677,9 +680,9 @@ _.extend(Meteor._LivedataConnection.prototype, {
 
     // if we were blocking a migration, see if it's now possible to
     // continue
-    if (self.retry_migrate && self._readyToMigrate()) {
-      self.retry_migrate();
-      self.retry_migrate = null;
+    if (self._retryMigrate && self._readyToMigrate()) {
+      self._retryMigrate();
+      self._retryMigrate = null;
     }
   },
 
@@ -716,51 +719,7 @@ _.extend(Meteor._LivedataConnection.prototype, {
 
   _callOnReconnectAndSendAppropriateOutstandingMethods: function() {
     var self = this;
-    var old_outstanding_methods = self.outstanding_methods;
-    var old_outstanding_wait_method = self.outstanding_wait_method;
-    var old_blocked_methods = self.blocked_methods;
-    self.outstanding_methods = [];
-    self.outstanding_wait_method = null;
-    self.blocked_methods = [];
-
-    self.onReconnect();
-
-    if (self.outstanding_wait_method) {
-      // self.onReconnect() caused us to wait on a method. Add all old
-      // methods to blocked_methods, and we don't need to send any
-      // additional methods
-      self.blocked_methods = self.blocked_methods.concat(
-        old_outstanding_methods);
-
-      if (old_outstanding_wait_method) {
-        self.blocked_methods.push(_.extend(
-          old_outstanding_wait_method, {wait: true}));
-      }
-
-      self.blocked_methods = self.blocked_methods.concat(
-        old_blocked_methods);
-    } else {
-      // self.onReconnect() did not cause us to wait on a method. Add
-      // as many methods as we can to outstanding_methods and send
-      // them
-      _.each(old_outstanding_methods, function(method) {
-        self.outstanding_methods.push(method);
-        self.stream.send(JSON.stringify(method.msg));
-      });
-
-      self.outstanding_wait_method = old_outstanding_wait_method;
-      if (self.outstanding_wait_method)
-        self.stream.send(JSON.stringify(self.outstanding_wait_method.msg));
-
-      self.blocked_methods = old_blocked_methods;
-    }
-  },
-
-  _readyToMigrate: function() {
-    var self = this;
-    return self.outstanding_methods.length === 0 &&
-      !self.outstanding_wait_method &&
-      self.blocked_methods.length === 0;
+    return self.outstanding_methods.length === 0;
   }
 });
 
