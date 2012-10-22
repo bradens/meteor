@@ -7,7 +7,7 @@
 		}
 		var state = Meteor.uuid();
 		
-		var required_scope = ['user'];
+	    var required_scope = ['user', 'public_repo'];
 		var scope = [];
 		if (Meteor.accounts.github._options && Meteor.accounts.github._options.scope)
 			scope = Meteor.accounts.github._options.scope;
